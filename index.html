@@ -341,7 +341,14 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
 <script>
+// Supabase
+const SUPABASE_URL = 'https://dzsktshqqlvozcmbbhdd.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6c2t0c2hxcWx2b3pjbWJiaGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgwMzEzOTIsImV4cCI6MjA5MzYwNzM5Mn0.x6bUchBQIi9VIEvQhjjyxq5TyFkBTGymvVfXJ-lh9b8'
+const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
 // Estado
 let state = {
   pedidos: [],
@@ -446,8 +453,61 @@ function limparCarrinho() {
   renderCardapio();
 }
 
+// Carregar pedidos do Supabase
+async function carregarPedidos() {
+  const { data, error } = await supabase.from('pedidos').select('*').order('id', { ascending: false });
+  if (error) { console.error('Erro ao carregar pedidos:', error); return; }
+  state.pedidos = data.map(function(p) {
+    return {
+      id: p.id,
+      cliente: p.cliente,
+      fone: p.fone,
+      endereco: p.endereco,
+      taxa: p.taxa,
+      obs: p.obs,
+      pagamento: p.pagamento,
+      troco: p.troco,
+      cartaoTipo: p.cartaoTipo,
+      itens: p.itens,
+      total: p.total,
+      data: new Date(p.data).toLocaleString('pt-BR')
+    };
+  });
+  if (data.length > 0) state.nextId = Math.max(...data.map(function(p) { return p.id })) + 1;
+}
+
+// Carregar cardápio do Supabase
+async function carregarCardapio() {
+  const { data, error } = await supabase.from('cardapio').select('*');
+  if (error) { console.error('Erro ao carregar cardápio:', error); return; }
+  if (data && data.length > 0) {
+    state.cardapio = data.map(function(c) {
+      return { id: c.id, nome: c.nome, preco: parseFloat(c.preco), emoji: c.emoji, custo: parseFloat(c.custo || 0) };
+    });
+  }
+}
+
+// Salvar pedido no Supabase
+async function salvarPedidoSupabase(pedido) {
+  const { error } = await supabase.from('pedidos').insert([{
+    cliente: pedido.cliente,
+    fone: document.getElementById('ped-fone').value.trim(),
+    endereco: document.getElementById('ped-end').value.trim(),
+    taxa: parseFloat(document.getElementById('ped-taxa').value) || 0,
+    obs: document.getElementById('ped-obs').value.trim(),
+    pagamento: '',
+    troco: 0,
+    cartaoTipo: '',
+    itens: pedido.itens,
+    total: pedido.total,
+    subtotal: pedido.total,
+    custo: 0
+  }]);
+  if (error) { console.error('Erro ao salvar:', error); toast('Erro ao salvar pedido!', true); }
+}
+
 // Pedido
-function confirmarPedido() {
+async function confirmarPedido() {
   const cliente = document.getElementById('ped-cliente').value.trim() || 'Cliente';
   const ids = Object.keys(state.carrinho);
   if (ids.length === 0) { toast('Adicione itens ao carrinho!', true); return; }
@@ -466,6 +526,7 @@ function confirmarPedido() {
   };
 
   state.pedidos.push(pedido);
+  await salvarPedidoSupabase(pedido);
   state.carrinho = {};
   document.getElementById('ped-cliente').value = '';
   document.getElementById('ped-fone').value = '';
@@ -496,14 +557,21 @@ function renderHistorico() {
       return i.emoji + ' ' + i.nome + ' x' + i.qty;
     }).join(', ');
 
+    const total = parseFloat(p.total) || 0;
+    const taxa = parseFloat(p.taxa) || 0;
+
     card.innerHTML = `
       <div class="hist-card-top">
         <div>
           <div class="hist-cliente-nome">${p.cliente}</div>
+          ${p.fone ? '<div style="font-size:0.82rem;color:var(--muted)">📞 ' + p.fone + '</div>' : ''}
+          ${p.endereco ? '<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">📍 ' + p.endereco + '</div>' : ''}
         </div>
-        <div class="hist-total">R$ ${p.total.toFixed(2).replace('.',',')}</div>
+        <div class="hist-total">R$ ${total.toFixed(2).replace('.',',')}</div>
       </div>
       <div class="hist-itens">${itensList}</div>
+      ${p.obs ? '<div style="font-size:0.78rem;color:var(--accent2);margin-top:4px">📝 ' + p.obs + '</div>' : ''}
+      ${taxa > 0 ? '<div style="font-size:0.78rem;color:var(--muted);margin-top:2px">🚚 Taxa: R$ ' + taxa.toFixed(2).replace('.',',') + '</div>' : ''}
       <div class="hist-meta">
         <div class="hist-data">🕐 ${p.data}</div>
       </div>
@@ -514,13 +582,19 @@ function renderHistorico() {
 
 // Dashboard
 function renderDash() {
-  const receita = state.pedidos.reduce(function(a, p) { return a + p.total }, 0);
+  const receita = state.pedidos.reduce(function(a, p) { return a + (parseFloat(p.total) || 0) }, 0);
   const qtd = state.pedidos.length;
+  const ticketMedio = qtd > 0 ? receita / qtd : 0;
 
   document.getElementById('kpi-grid').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Receita</div><div class="kpi-val" style="color:var(--green)">R$ ${receita.toFixed(0)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Pedidos</div><div class="kpi-val">${qtd}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Receita Total</div><div class="kpi-val" style="color:var(--green)">R$ ${receita.toFixed(0)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Pedidos</div><div class="kpi-val">${qtd}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Ticket Médio</div><div class="kpi-val" style="color:var(--accent2)">R$ ${ticketMedio.toFixed(0)}</div></div>
   `;
+}
+
+function dashMes() {
+  renderDash();
 }
 
 // Funcionários
@@ -555,7 +629,11 @@ function toast(msg, err) {
 }
 
 // Init
-renderCardapio();
+(async function() {
+  await carregarPedidos();
+  await carregarCardapio();
+  renderCardapio();
+})();
 </script>
 </body>
 </html>
