@@ -617,6 +617,8 @@ function renderGastos() {
 }
 
 // Cardápio Manage
+let editandoItemId = null;
+
 function renderCardManage() {
   const el = document.getElementById('card-manage-list');
   el.innerHTML = `
@@ -657,35 +659,71 @@ function renderManageItens() {
     return;
   }
   list.innerHTML = state.cardapio.map(function(c) {
+    const editando = editandoItemId === c.id;
     return `
       <div class="hist-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-weight:700;font-size:1rem">${c.emoji} ${c.nome}</div>
-          <button class="qty-btn" style="background:var(--red)" onclick="deletarItemCardapio(${c.id})">🗑️</button>
-        </div>
-        <div class="form-row">
-          <div class="form-group" style="margin:0">
-            <label>Preço Venda (R$)</label>
-            <input type="number" value="${c.preco}" step="0.50" min="0" onchange="editarItemCardapio(${c.id}, 'preco', this.value)">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label>Custo (R$)</label>
-            <input type="number" value="${c.custo || 0}" step="0.50" min="0" onchange="editarItemCardapio(${c.id}, 'custo', this.value)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${editando ? '10px' : '0'}">
+          <div style="font-weight:700;font-size:1rem">${c.emoji} ${c.nome} — Venda: R$ ${parseFloat(c.preco).toFixed(2).replace('.',',')} — Custo: R$ ${parseFloat(c.custo || 0).toFixed(2).replace('.',',')}</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:0.78rem" onclick="toggleEditItem(${c.id})">${editando ? '❌ Cancelar' : '✏️ Editar'}</button>
+            <button class="qty-btn" style="background:var(--red)" onclick="deletarItemCardapio(${c.id})">🗑️</button>
           </div>
         </div>
-        <div class="form-row" style="margin-top:8px">
-          <div class="form-group" style="margin:0">
-            <label>Nome</label>
-            <input type="text" value="${c.nome}" onchange="editarItemCardapio(${c.id}, 'nome', this.value)">
+        ${editando ? `
+        <div style="border-top:1px solid var(--border);padding-top:10px">
+          <div class="form-row">
+            <div class="form-group" style="margin:0">
+              <label>Nome</label>
+              <input type="text" id="edit-nome-${c.id}" value="${c.nome}">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Emoji</label>
+              <input type="text" id="edit-emoji-${c.id}" value="${c.emoji}" style="width:80px">
+            </div>
           </div>
-          <div class="form-group" style="margin:0">
-            <label>Emoji</label>
-            <input type="text" value="${c.emoji}" style="width:80px" onchange="editarItemCardapio(${c.id}, 'emoji', this.value)">
+          <div class="form-row" style="margin-top:8px">
+            <div class="form-group" style="margin:0">
+              <label>Preço Venda (R$)</label>
+              <input type="number" id="edit-preco-${c.id}" value="${c.preco}" step="0.50" min="0">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Custo (R$)</label>
+              <input type="number" id="edit-custo-${c.id}" value="${c.custo || 0}" step="0.50" min="0">
+            </div>
           </div>
+          <button class="btn btn-primary" style="margin-top:10px" onclick="salvarEdicaoItem(${c.id})">💾 Salvar Alterações</button>
         </div>
+        ` : ''}
       </div>
     `;
   }).join('');
+}
+
+function toggleEditItem(id) {
+  editandoItemId = editandoItemId === id ? null : id;
+  renderManageItens();
+}
+
+async function salvarEdicaoItem(id) {
+  const item = state.cardapio.find(c => c.id == id);
+  if (!item) return;
+  const nome = document.getElementById('edit-nome-' + id).value.trim();
+  const emoji = document.getElementById('edit-emoji-' + id).value.trim() || '🍽️';
+  const preco = parseFloat(document.getElementById('edit-preco-' + id).value) || 0;
+  const custo = parseFloat(document.getElementById('edit-custo-' + id).value) || 0;
+  if (!nome || preco <= 0) { toast('Preencha nome e preço!', true); return; }
+
+  const { error } = await supabase.from('cardapio').update({ nome, emoji, preco, custo }).eq('id', id);
+  if (error) { console.error(error); toast('Erro ao editar!', true); return; }
+
+  item.nome = nome;
+  item.emoji = emoji;
+  item.preco = preco;
+  item.custo = custo;
+  editandoItemId = null;
+  renderManageItens();
+  renderCardapio();
+  toast('Item atualizado! ✅');
 }
 
 async function adicionarItemCardapio() {
@@ -695,7 +733,7 @@ async function adicionarItemCardapio() {
   const custo = parseFloat(document.getElementById('new-item-custo').value) || 0;
   if (!nome || preco <= 0) { toast('Preencha nome e preço!', true); return; }
 
-  const { data, error } = await supabase.from('cardapio').insert([{ nome, emoji, preco, custo }]).select();
+  const { data, error } = await supabase.from('cardapio').insert([{ nome, emoji, preco: preco, custo: custo }]).select();
   if (error) { console.error(error); toast('Erro ao adicionar!', true); return; }
 
   await carregarCardapio();
@@ -706,18 +744,6 @@ async function adicionarItemCardapio() {
   document.getElementById('new-item-preco').value = '';
   document.getElementById('new-item-custo').value = '';
   toast('Item adicionado! 🍽️');
-}
-
-async function editarItemCardapio(id, campo, valor) {
-  const item = state.cardapio.find(c => c.id == id);
-  if (!item) return;
-  item[campo] = campo === 'nome' || campo === 'emoji' ? valor : parseFloat(valor);
-  const updateData = {};
-  updateData[campo] = item[campo];
-  const { error } = await supabase.from('cardapio').update(updateData).eq('id', id);
-  if (error) { console.error(error); toast('Erro ao editar!', true); return; }
-  renderCardapio();
-  toast('Item atualizado! ✅');
 }
 
 async function deletarItemCardapio(id) {
@@ -763,8 +789,10 @@ window.limparCarrinho = limparCarrinho;
 window.confirmarPedido = confirmarPedido;
 window.formatarTelefone = formatarTelefone;
 window.renderCardManage = renderCardManage;
+window.renderManageItens = renderManageItens;
 window.adicionarItemCardapio = adicionarItemCardapio;
-window.editarItemCardapio = editarItemCardapio;
+window.toggleEditItem = toggleEditItem;
+window.salvarEdicaoItem = salvarEdicaoItem;
 window.deletarItemCardapio = deletarItemCardapio;
 </script>
 </body>
