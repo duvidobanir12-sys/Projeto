@@ -902,8 +902,8 @@
 // Supabase Config - SUBSTITUA PELOS SEUS DADOS DO SUPABASE
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
 
-const SUPABASE_URL = 'https://SUA_PROJETO.supabase.co'
-const SUPABASE_ANON_KEY = 'SUA_ANON_KEY'
+const SUPABASE_URL = 'https://dzsktshqqlvozcmbbhdd.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6c2t0c2hxcWx2b3pjbWJiaGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgwMzEzOTIsImV4cCI6MjA5MzYwNzM5Mn0.x6bUchBQIi9VIEvQhjjyxq5TyFkBTGymvVfXJ-lh9b8'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -1116,7 +1116,7 @@ function autocompleteCliente(input) {
   const match = state.clientes.find(c => c.nome.toLowerCase() === val)
   if (match) {
     document.getElementById('ped-fone').value = match.fone || ''
-    document.getElementById('ped-end').value = match.end || ''
+    document.getElementById('ped-end').value = match.endereco || ''
   }
 }
 
@@ -1126,7 +1126,7 @@ function autocompleteClienteFone(input) {
   const match = state.clientes.find(c => (c.fone || '').replace(/\D/g, '') === val)
   if (match) {
     document.getElementById('ped-cliente').value = match.nome || ''
-    document.getElementById('ped-end').value = match.end || ''
+    document.getElementById('ped-end').value = match.endereco || ''
     toast('Cliente encontrado: ' + match.nome + ' 👤')
   }
 }
@@ -1162,12 +1162,12 @@ async function confirmarPedido() {
   if (error) { toast('Erro ao salvar pedido!', true); return }
 
   // Salvar/atualizar cliente
-  if (cliente !== 'Cliente' && (fone || end)) {
+  if (cliente !== 'Cliente' && (fone || endereco)) {
     const { data: existing } = await supabase.from('clientes').select('*').eq('fone', fone).single()
     if (existing) {
-      await supabase.from('clientes').update({ nome: cliente, fone, end }).eq('fone', fone)
+      await supabase.from('clientes').update({ nome: cliente, fone, endereco }).eq('fone', fone)
     } else {
-      await supabase.from('clientes').insert([{ nome: cliente, fone, end }])
+      await supabase.from('clientes').insert([{ nome: cliente, fone, endereco }])
     }
   }
 
