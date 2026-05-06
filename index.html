@@ -928,73 +928,41 @@ let state = {
 
 // ======= SUBSCRIPTIONS =======
 function setupSubscriptions() {
-  // Pedidos
-  supabase
-    .channel('pedidos')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, (payload) => {
-      loadInitialData()
-    })
-    .subscribe()
-
-  // Funcionarios
-  supabase
-    .channel('funcionarios')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'funcionarios' }, (payload) => {
-      loadInitialData()
-    })
-    .subscribe()
-
-  // Gastos
-  supabase
-    .channel('gastos')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'gastos' }, (payload) => {
-      loadInitialData()
-    })
-    .subscribe()
-
-  // Clientes
-  supabase
-    .channel('clientes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, (payload) => {
-      loadInitialData()
-    })
-    .subscribe()
-
-  // Cardapio
-  supabase
-    .channel('cardapio')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'cardapio' }, (payload) => {
-      loadInitialData()
-    })
-    .subscribe()
+  // Subscrições desativadas para evitar erros
+  // Pode ativar depois se necessário
 }
 
 async function loadInitialData() {
-  const [
-    { data: pedidos },
-    { data: funcionarios },
-    { data: gastos },
-    { data: clientes },
-    { data: cardapio }
-  ] = await Promise.all([
-    supabase.from('pedidos').select('*').order('data', { ascending: false }),
-    supabase.from('funcionarios').select('*'),
-    supabase.from('gastos').select('*'),
-    supabase.from('clientes').select('*'),
-    supabase.from('cardapio').select('*')
-  ])
+  try {
+    const [
+      { data: pedidos },
+      { data: funcionarios },
+      { data: gastos },
+      { data: clientes },
+      { data: cardapio }
+    ] = await Promise.all([
+      supabase.from('pedidos').select('*').order('data', { ascending: false }),
+      supabase.from('funcionarios').select('*'),
+      supabase.from('gastos').select('*'),
+      supabase.from('clientes').select('*'),
+      supabase.from('cardapio').select('*')
+    ])
 
-  if (pedidos) state.pedidos = pedidos
-  if (funcionarios) state.funcionarios = funcionarios
-  if (gastos) state.gastos = gastos
-  if (clientes) state.clientes = clientes
-  if (cardapio && cardapio.length > 0) {
-    state.cardapio = cardapio
-    state.cardNextId = Math.max(...cardapio.map(i => i.id)) + 1
+    if (pedidos) state.pedidos = pedidos
+    if (funcionarios) state.funcionarios = funcionarios
+    if (gastos) state.gastos = gastos
+    if (clientes) state.clientes = clientes
+    if (cardapio && cardapio.length > 0) {
+      state.cardapio = cardapio
+      state.cardNextId = Math.max(...cardapio.map(i => i.id)) + 1
+    }
+
+    renderCardapio()
+    atualizarDatalistClientes()
+  } catch (error) {
+    console.error('Erro ao carregar dados:', error)
+    toast('Erro ao conectar com banco de dados', true)
   }
-
-  renderCardapio()
-  atualizarDatalistClientes()
 }
 
 // ======= TABS =======
