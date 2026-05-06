@@ -1467,7 +1467,7 @@ function renderGastos() {
   el.innerHTML = sorted.map(g => `
     <div class="gasto-row">
       <div>
-        <div class="gasto-desc">${g.desc}</div>
+        <div class="gasto-desc">${g.descricao}</div>
         <div class="gasto-cat">${g.cat} · ${g.data}</div>
       </div>
       <div class="gasto-val">-R$ ${parseFloat(g.valor).toFixed(2).replace('.', ',')}</div>
