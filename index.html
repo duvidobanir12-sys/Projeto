@@ -899,21 +899,13 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-// Firebase Config - SUBSTITUA PELOS SEUS DADOS DO FIREBASE CONSOLE
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+// Supabase Config - SUBSTITUA PELOS SEUS DADOS DO SUPABASE
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
 
-const firebaseConfig = {
-  apiKey: "AIzaSyA2hBUR8_p6COAw2q9pzwdtuMHb8ifWhvk",
-  authDomain: "projeto-6014b.firebaseapp.com",
-  projectId: "projeto-6014b",
-  storageBucket: "projeto-6014b.firebasestorage.app",
-  messagingSenderId: "898828561225",
-  appId: "1:898828561225:web:f745864d7170800b804898"
-};
+const SUPABASE_URL = 'https://SUA_PROJETO.supabase.co'
+const SUPABASE_ANON_KEY = 'SUA_ANON_KEY'
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 // ======= STATE =======
 let state = {
@@ -932,127 +924,149 @@ let state = {
   carrinho: {},
   nextId: 1,
   cardNextId: 10,
-};
-
-let listenersSet = false;
-
-function setupListeners() {
-  if (listenersSet) return;
-  listenersSet = true;
-
-  // Pedidos
-  onSnapshot(query(collection(db, 'pedidos'), orderBy('data', 'desc')), (snap) => {
-    state.pedidos = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
-    if (document.getElementById('page-historico').classList.contains('active')) renderHistorico();
-    if (document.getElementById('page-dashboard').classList.contains('active')) renderDash();
-  });
-
-  // Funcionarios
-  onSnapshot(collection(db, 'funcionarios'), (snap) => {
-    state.funcionarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (document.getElementById('page-funcionarios').classList.contains('active')) renderFuncionarios();
-  });
-
-  // Gastos
-  onSnapshot(collection(db, 'gastos'), (snap) => {
-    state.gastos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (document.getElementById('page-gastos').classList.contains('active')) renderGastos();
-  });
-
-  // Clientes
-  onSnapshot(collection(db, 'clientes'), (snap) => {
-    state.clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    atualizarDatalistClientes();
-  });
-
-  // Cardapio
-  onSnapshot(collection(db, 'cardapio'), (snap) => {
-    const items = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
-    if (items.length > 0) {
-      state.cardapio = items;
-      state.cardNextId = Math.max(...items.map(i => i.id)) + 1;
-    }
-    renderCardapio();
-  });
 }
 
-async function saveState() {
-  // Salva cada pedido no Firestore
-  for (const pedido of state.pedidos) {
-    await setDoc(doc(db, 'pedidos', pedido.id.toString()), pedido);
+// ======= SUBSCRIPTIONS =======
+function setupSubscriptions() {
+  // Pedidos
+  supabase
+    .channel('pedidos')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, (payload) => {
+      loadInitialData()
+    })
+    .subscribe()
+
+  // Funcionarios
+  supabase
+    .channel('funcionarios')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'funcionarios' }, (payload) => {
+      loadInitialData()
+    })
+    .subscribe()
+
+  // Gastos
+  supabase
+    .channel('gastos')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'gastos' }, (payload) => {
+      loadInitialData()
+    })
+    .subscribe()
+
+  // Clientes
+  supabase
+    .channel('clientes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, (payload) => {
+      loadInitialData()
+    })
+    .subscribe()
+
+  // Cardapio
+  supabase
+    .channel('cardapio')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cardapio' }, (payload) => {
+      loadInitialData()
+    })
+    .subscribe()
+}
+
+async function loadInitialData() {
+  const [
+    { data: pedidos },
+    { data: funcionarios },
+    { data: gastos },
+    { data: clientes },
+    { data: cardapio }
+  ] = await Promise.all([
+    supabase.from('pedidos').select('*').order('data', { ascending: false }),
+    supabase.from('funcionarios').select('*'),
+    supabase.from('gastos').select('*'),
+    supabase.from('clientes').select('*'),
+    supabase.from('cardapio').select('*')
+  ])
+
+  if (pedidos) state.pedidos = pedidos
+  if (funcionarios) state.funcionarios = funcionarios
+  if (gastos) state.gastos = gastos
+  if (clientes) state.clientes = clientes
+  if (cardapio && cardapio.length > 0) {
+    state.cardapio = cardapio
+    state.cardNextId = Math.max(...cardapio.map(i => i.id)) + 1
   }
+
+  renderCardapio()
+  atualizarDatalistClientes()
 }
 
 // ======= TABS =======
 function goTab(tab) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById('page-' + tab).classList.add('active');
-  if (tab === 'pedidos') renderCardapio();
-  if (tab === 'historico') renderHistorico();
-  if (tab === 'dashboard') { dashMes(); }
-  if (tab === 'funcionarios') renderFuncionarios();
-  if (tab === 'gastos') renderGastos();
-  if (tab === 'cardapio') renderCardManage();
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+  event.target.classList.add('active')
+  document.getElementById('page-' + tab).classList.add('active')
+  if (tab === 'pedidos') renderCardapio()
+  if (tab === 'historico') renderHistorico()
+  if (tab === 'dashboard') { dashMes() }
+  if (tab === 'funcionarios') renderFuncionarios()
+  if (tab === 'gastos') renderGastos()
+  if (tab === 'cardapio') renderCardManage()
 }
 
 // ======= DATE HEADER =======
 function setDate() {
-  const d = new Date();
-  document.getElementById('header-date').textContent = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).toUpperCase();
-  document.getElementById('gasto-data').value = d.toISOString().split('T')[0];
+  const d = new Date()
+  document.getElementById('header-date').textContent = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).toUpperCase()
+  document.getElementById('gasto-data').value = d.toISOString().split('T')[0]
 }
 
 // ======= CARDÁPIO GRID =======
 function renderCardapio() {
-  const grid = document.getElementById('cardapio-grid');
-  grid.innerHTML = '';
+  const grid = document.getElementById('cardapio-grid')
+  grid.innerHTML = ''
   state.cardapio.forEach(item => {
-    const qty = state.carrinho[item.id] || 0;
-    const div = document.createElement('div');
-    div.className = 'menu-item' + (qty > 0 ? ' selected' : '');
-    div.onclick = () => addCarrinho(item.id);
+    const qty = state.carrinho[item.id] || 0
+    const div = document.createElement('div')
+    div.className = 'menu-item' + (qty > 0 ? ' selected' : '')
+    div.onclick = () => addCarrinho(item.id)
     div.innerHTML = `
       ${qty > 0 ? `<div class="qty-badge">${qty}</div>` : ''}
       <span class="emoji">${item.emoji}</span>
       <div class="item-name">${item.nome}</div>
-      <div class="item-price">R$ ${item.preco.toFixed(2).replace('.',',')}</div>
-    `;
-    grid.appendChild(div);
-  });
-  renderCarrinho();
+      <div class="item-price">R$ ${item.preco.toFixed(2).replace('.', ',')}</div>
+    `
+    grid.appendChild(div)
+  })
+  renderCarrinho()
 }
 
 function addCarrinho(id) {
-  state.carrinho[id] = (state.carrinho[id] || 0) + 1;
-  renderCardapio();
+  state.carrinho[id] = (state.carrinho[id] || 0) + 1
+  renderCardapio()
 }
 
 function removeCarrinho(id) {
-  if (state.carrinho[id] > 0) state.carrinho[id]--;
-  if (state.carrinho[id] === 0) delete state.carrinho[id];
-  renderCardapio();
+  if (state.carrinho[id] > 0) state.carrinho[id]--
+  if (state.carrinho[id] === 0) delete state.carrinho[id]
+  renderCardapio()
 }
 
 function renderCarrinho() {
-  const box = document.getElementById('carrinho-box');
-  const list = document.getElementById('carrinho-list');
-  const totalEl = document.getElementById('total-val');
-  const ids = Object.keys(state.carrinho);
+  const box = document.getElementById('carrinho-box')
+  const list = document.getElementById('carrinho-list')
+  const totalEl = document.getElementById('total-val')
+  const ids = Object.keys(state.carrinho)
 
-  if (ids.length === 0) { box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  list.innerHTML = '';
-  let total = 0;
+  if (ids.length === 0) { box.style.display = 'none'; return }
+  box.style.display = 'block'
+  list.innerHTML = ''
+  let total = 0
   ids.forEach(id => {
-    const item = state.cardapio.find(c => c.id == id);
-    if (!item) return;
-    const qty = state.carrinho[id];
-    const sub = item.preco * qty;
-    total += sub;
-    const row = document.createElement('div');
-    row.className = 'pedido-row';
+    const item = state.cardapio.find(c => c.id == id)
+    if (!item) return
+    const qty = state.carrinho[id]
+    const sub = item.preco * qty
+    total += sub
+    const row = document.createElement('div')
+    row.className = 'pedido-row'
     row.innerHTML = `
       <div class="row-name">${item.emoji} ${item.nome}</div>
       <div class="qty-ctrl">
@@ -1060,211 +1074,210 @@ function renderCarrinho() {
         <span style="font-weight:800;min-width:18px;text-align:center">${qty}</span>
         <button class="qty-btn" onclick="addCarrinho(${id})">+</button>
       </div>
-      <div class="row-price">R$ ${sub.toFixed(2).replace('.',',')}</div>
-    `;
-    list.appendChild(row);
-  });
-  totalEl.textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
+      <div class="row-price">R$ ${sub.toFixed(2).replace('.', ',')}</div>
+    `
+    list.appendChild(row)
+  })
+  totalEl.textContent = 'R$ ' + total.toFixed(2).replace('.', ',')
 }
 
 function limparCarrinho() {
-  state.carrinho = {};
-  renderCardapio();
+  state.carrinho = {}
+  renderCardapio()
 }
 
 function mascaraTel(input) {
-  let v = input.value.replace(/\D/g, '').slice(0, 11);
-  if (v.length === 0) { input.value = ''; return; }
-  let f = '(' + v.slice(0, 2);
-  if (v.length > 2) f += ') ' + v.slice(2, v.length > 10 ? 7 : 6);
-  if (v.length > 6) f += '-' + v.slice(v.length > 10 ? 7 : 6);
-  input.value = f;
+  let v = input.value.replace(/\D/g, '').slice(0, 11)
+  if (v.length === 0) { input.value = ''; return }
+  let f = '(' + v.slice(0, 2)
+  if (v.length > 2) f += ') ' + v.slice(2, v.length > 10 ? 7 : 6)
+  if (v.length > 6) f += '-' + v.slice(v.length > 10 ? 7 : 6)
+  input.value = f
 }
 
 function togglePagamento() {
-  const val = document.getElementById('ped-pagamento').value;
-  document.getElementById('pagamento-extra').style.display = (val === 'dinheiro' || val === 'cartao') ? 'block' : 'none';
-  document.getElementById('pag-dinheiro-box').style.display = val === 'dinheiro' ? 'block' : 'none';
-  document.getElementById('pag-cartao-box').style.display = val === 'cartao' ? 'block' : 'none';
+  const val = document.getElementById('ped-pagamento').value
+  document.getElementById('pagamento-extra').style.display = (val === 'dinheiro' || val === 'cartao') ? 'block' : 'none'
+  document.getElementById('pag-dinheiro-box').style.display = val === 'dinheiro' ? 'block' : 'none'
+  document.getElementById('pag-cartao-box').style.display = val === 'cartao' ? 'block' : 'none'
 }
 
 function atualizarDatalistClientes() {
-  const dl1 = document.getElementById('lista-clientes-nome');
-  const dl2 = document.getElementById('lista-clientes-fone');
-  if (!dl1 || !dl2) return;
-  dl1.innerHTML = state.clientes.map(c => `<option value="${c.nome}">`).join('');
-  dl2.innerHTML = state.clientes.map(c => `<option value="${c.fone}">`).join('');
+  const dl1 = document.getElementById('lista-clientes-nome')
+  const dl2 = document.getElementById('lista-clientes-fone')
+  if (!dl1 || !dl2) return
+  dl1.innerHTML = state.clientes.map(c => `<option value="${c.nome}">`).join('')
+  dl2.innerHTML = state.clientes.map(c => `<option value="${c.fone}">`).join('')
 }
 
 function autocompleteCliente(input) {
-  const val = input.value.trim().toLowerCase();
-  if (!val) return;
-  const match = state.clientes.find(c => c.nome.toLowerCase() === val);
+  const val = input.value.trim().toLowerCase()
+  if (!val) return
+  const match = state.clientes.find(c => c.nome.toLowerCase() === val)
   if (match) {
-    document.getElementById('ped-fone').value = match.fone || '';
-    document.getElementById('ped-end').value = match.end || '';
+    document.getElementById('ped-fone').value = match.fone || ''
+    document.getElementById('ped-end').value = match.end || ''
   }
 }
 
 function autocompleteClienteFone(input) {
-  const val = input.value.replace(/\D/g, '');
-  if (val.length < 8) return;
-  const match = state.clientes.find(c => (c.fone || '').replace(/\D/g, '') === val);
+  const val = input.value.replace(/\D/g, '')
+  if (val.length < 8) return
+  const match = state.clientes.find(c => (c.fone || '').replace(/\D/g, '') === val)
   if (match) {
-    document.getElementById('ped-cliente').value = match.nome || '';
-    document.getElementById('ped-end').value = match.end || '';
-    toast('Cliente encontrado: ' + match.nome + ' 👤');
+    document.getElementById('ped-cliente').value = match.nome || ''
+    document.getElementById('ped-end').value = match.end || ''
+    toast('Cliente encontrado: ' + match.nome + ' 👤')
   }
 }
 
 async function confirmarPedido() {
-  const cliente = document.getElementById('ped-cliente').value.trim() || 'Cliente';
-  const fone = document.getElementById('ped-fone').value.trim();
-  const end = document.getElementById('ped-end').value.trim();
-  const taxa = parseFloat(document.getElementById('ped-taxa').value) || 0;
-  const obs = document.getElementById('ped-obs').value.trim();
-  const pagamento = document.getElementById('ped-pagamento').value;
-  const troco = pagamento === 'dinheiro' ? (parseFloat(document.getElementById('ped-troco').value) || 0) : 0;
-  const cartaoTipo = pagamento === 'cartao' ? document.getElementById('ped-cartao-tipo').value : '';
-  const ids = Object.keys(state.carrinho);
-  if (ids.length === 0) { toast('Adicione itens ao carrinho!', true); return; }
+  const cliente = document.getElementById('ped-cliente').value.trim() || 'Cliente'
+  const fone = document.getElementById('ped-fone').value.trim()
+  const end = document.getElementById('ped-end').value.trim()
+  const taxa = parseFloat(document.getElementById('ped-taxa').value) || 0
+  const obs = document.getElementById('ped-obs').value.trim()
+  const pagamento = document.getElementById('ped-pagamento').value
+  const troco = pagamento === 'dinheiro' ? (parseFloat(document.getElementById('ped-troco').value) || 0) : 0
+  const cartaoTipo = pagamento === 'cartao' ? document.getElementById('ped-cartao-tipo').value : ''
+  const ids = Object.keys(state.carrinho)
+  if (ids.length === 0) { toast('Adicione itens ao carrinho!', true); return }
 
   const itens = ids.map(id => {
-    const item = state.cardapio.find(c => c.id == id);
-    return { id: parseInt(id), nome: item.nome, emoji: item.emoji, qty: state.carrinho[id], preco: item.preco, custo: item.custo || 0 };
-  });
-  const subtotal = itens.reduce((a, i) => a + i.preco * i.qty, 0);
-  const total = subtotal + taxa;
-  const custo = itens.reduce((a, i) => a + i.custo * i.qty, 0);
+    const item = state.cardapio.find(c => c.id == id)
+    return { id: parseInt(id), nome: item.nome, emoji: item.emoji, qty: state.carrinho[id], preco: item.preco, custo: item.custo || 0 }
+  })
+  const subtotal = itens.reduce((a, i) => a + i.preco * i.qty, 0)
+  const total = subtotal + taxa
+  const custo = itens.reduce((a, i) => a + i.custo * i.qty, 0)
 
   const pedido = {
-    id: state.nextId++,
     cliente, fone, end, taxa, obs,
     pagamento, troco, cartaoTipo,
     itens, total, subtotal, custo,
     data: new Date().toISOString(),
-  };
+  }
 
-  // Salvar no Firestore
-  await setDoc(doc(db, 'pedidos', pedido.id.toString()), pedido);
+  const { data, error } = await supabase.from('pedidos').insert([pedido]).select()
+  if (error) { toast('Erro ao salvar pedido!', true); return }
 
   // Salvar/atualizar cliente
   if (cliente !== 'Cliente' && (fone || end)) {
-    const existente = state.clientes.find(c => c.fone && c.fone === fone);
-    if (existente) {
-      await setDoc(doc(db, 'clientes', existente.id), { nome: cliente, fone, end });
+    const { data: existing } = await supabase.from('clientes').select('*').eq('fone', fone).single()
+    if (existing) {
+      await supabase.from('clientes').update({ nome: cliente, fone, end }).eq('fone', fone)
     } else {
-      await addDoc(collection(db, 'clientes'), { nome: cliente, fone, end });
+      await supabase.from('clientes').insert([{ nome: cliente, fone, end }])
     }
   }
 
-  state.carrinho = {};
-  document.getElementById('ped-cliente').value = '';
-  document.getElementById('ped-fone').value = '';
-  document.getElementById('ped-end').value = '';
-  document.getElementById('ped-taxa').value = '2';
-  document.getElementById('ped-obs').value = '';
-  document.getElementById('ped-troco').value = '';
-  document.getElementById('ped-pagamento').value = 'pix';
-  togglePagamento();
+  state.carrinho = {}
+  document.getElementById('ped-cliente').value = ''
+  document.getElementById('ped-fone').value = ''
+  document.getElementById('ped-end').value = ''
+  document.getElementById('ped-taxa').value = '2'
+  document.getElementById('ped-obs').value = ''
+  document.getElementById('ped-troco').value = ''
+  document.getElementById('ped-pagamento').value = 'pix'
+  togglePagamento()
 
-  toast('Pedido #' + pedido.id + ' confirmado! 🔥');
-  renderCardapio();
-  mostrarNota(pedido);
+  toast('Pedido confirmado! 🔥')
+  renderCardapio()
+  if (data && data[0]) mostrarNota(data[0])
 }
 
 // ======= NOTA =======
 function mostrarNota(pedido) {
-  let txt = `━━━━━━━━━━━━━━━━━━\n`;
-  txt += `👤 ${pedido.cliente}\n`;
-  if (pedido.fone) txt += `📱 ${pedido.fone}\n`;
-  if (pedido.end) txt += `📍 ${pedido.end}\n`;
-  txt += `📅 ${new Date(pedido.data).toLocaleString('pt-BR')}\n`;
-  txt += `━━━━━━━━━━━━━━━━━━\n`;
+  let txt = `━━━━━━━━━━━━━━━━━━\n`
+  txt += `👤 ${pedido.cliente}\n`
+  if (pedido.fone) txt += `📱 ${pedido.fone}\n`
+  if (pedido.end) txt += `📍 ${pedido.end}\n`
+  txt += `📅 ${new Date(pedido.data).toLocaleString('pt-BR')}\n`
+  txt += `━━━━━━━━━━━━━━━━━━\n`
   pedido.itens.forEach(i => {
-    txt += `${i.emoji} ${i.nome} x${i.qty}  →  R$ ${(i.preco * i.qty).toFixed(2).replace('.', ',')}\n`;
-  });
-  txt += `━━━━━━━━━━━━━━━━━━\n`;
-  if (pedido.taxa > 0) txt += `🛵 Entrega: R$ ${pedido.taxa.toFixed(2).replace('.', ',')}\n`;
-  txt += `💰 TOTAL: R$ ${pedido.total.toFixed(2).replace('.', ',')}\n`;
-  if (pedido.obs) txt += `📝 Obs: ${pedido.obs}\n`;
-  if (pedido.pagamento === 'pix') txt += `💳 Pagamento: Pix\n`;
+    txt += `${i.emoji} ${i.nome} x${i.qty}  →  R$ ${(i.preco * i.qty).toFixed(2).replace('.', ',')}\n`
+  })
+  txt += `━━━━━━━━━━━━━━━━━━\n`
+  if (pedido.taxa > 0) txt += `🛵 Entrega: R$ ${pedido.taxa.toFixed(2).replace('.', ',')}\n`
+  txt += `💰 TOTAL: R$ ${pedido.total.toFixed(2).replace('.', ',')}\n`
+  if (pedido.obs) txt += `📝 Obs: ${pedido.obs}\n`
+  if (pedido.pagamento === 'pix') txt += `💳 Pagamento: Pix\n`
   else if (pedido.pagamento === 'dinheiro') {
-    txt += `💵 Pagamento: Dinheiro\n`;
-    if (pedido.troco) txt += `💰 Troco para: R$ ${pedido.troco.toFixed(2).replace('.', ',')}\n`;
+    txt += `💵 Pagamento: Dinheiro\n`
+    if (pedido.troco) txt += `💰 Troco para: R$ ${pedido.troco.toFixed(2).replace('.', ',')}\n`
   } else if (pedido.pagamento === 'cartao') {
-    txt += `💳 Pagamento: Cartão ${pedido.cartaoTipo === 'credito' ? 'Crédito' : 'Débito'}\n`;
+    txt += `💳 Pagamento: Cartão ${pedido.cartaoTipo === 'credito' ? 'Crédito' : 'Débito'}\n`
   }
-  txt += `━━━━━━━━━━━━━━━━━━\n`;
-  txt += `Obrigado pela preferência! 😄`;
+  txt += `━━━━━━━━━━━━━━━━━━\n`
+  txt += `Obrigado pela preferência! 😄`
 
-  document.getElementById('nota-text').textContent = txt;
-  document.getElementById('modal-nota').dataset.nota = txt;
-  openModal('modal-nota');
+  document.getElementById('nota-text').textContent = txt
+  document.getElementById('modal-nota').dataset.nota = txt
+  openModal('modal-nota')
 }
 
 function copiarEZap() {
-  const txt = document.getElementById('modal-nota').dataset.nota;
-  const ta = document.createElement('textarea');
-  ta.value = txt;
-  ta.style.position = 'fixed';
-  ta.style.left = '-9999px';
-  ta.style.top = '-9999px';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  try { document.execCommand('copy'); } catch(e) {}
-  document.body.removeChild(ta);
-  if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
-  toast('Mensagem copiada! 📋');
+  const txt = document.getElementById('modal-nota').dataset.nota
+  const ta = document.createElement('textarea')
+  ta.value = txt
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  ta.style.top = '-9999px'
+  document.body.appendChild(ta)
+  ta.focus()
+  ta.select()
+  try { document.execCommand('copy') } catch(e) {}
+  document.body.removeChild(ta)
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {})
+  toast('Mensagem copiada! 📋')
   setTimeout(() => {
-    const encoded = encodeURIComponent(txt);
-    window.open(`https://wa.me/?text=${encoded}`, '_blank');
-  }, 400);
+    const encoded = encodeURIComponent(txt)
+    window.open(`https://wa.me/?text=${encoded}`, '_blank')
+  }, 400)
 }
 
 // ======= HISTÓRICO =======
 function histHoje() {
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('hist-de').value = today;
-  document.getElementById('hist-ate').value = today;
-  renderHistorico();
+  const today = new Date().toISOString().split('T')[0]
+  document.getElementById('hist-de').value = today
+  document.getElementById('hist-ate').value = today
+  renderHistorico()
 }
 function histLimpar() {
-  document.getElementById('hist-de').value = '';
-  document.getElementById('hist-ate').value = '';
-  renderHistorico();
+  document.getElementById('hist-de').value = ''
+  document.getElementById('hist-ate').value = ''
+  renderHistorico()
 }
 
 function renderHistorico() {
-  const de = document.getElementById('hist-de').value;
-  const ate = document.getElementById('hist-ate').value;
-  let pedidos = [...state.pedidos].reverse();
-  if (de) pedidos = pedidos.filter(p => p.data >= de);
-  if (ate) pedidos = pedidos.filter(p => p.data <= ate + 'T23:59:59');
+  const de = document.getElementById('hist-de').value
+  const ate = document.getElementById('hist-ate').value
+  let pedidos = [...state.pedidos].reverse()
+  if (de) pedidos = pedidos.filter(p => p.data >= de)
+  if (ate) pedidos = pedidos.filter(p => p.data <= ate + 'T23:59:59')
 
-  const list = document.getElementById('hist-list');
-  const empty = document.getElementById('hist-empty');
-  list.innerHTML = '';
+  const list = document.getElementById('hist-list')
+  const empty = document.getElementById('hist-empty')
+  list.innerHTML = ''
 
   if (pedidos.length === 0) {
-    empty.style.display = 'block';
-    return;
+    empty.style.display = 'block'
+    return
   }
-  empty.style.display = 'none';
+  empty.style.display = 'none'
 
   pedidos.forEach(p => {
     const pagLabel = p.pagamento === 'pix' ? '💳 Pix'
-      : p.pagamento === 'dinheiro' ? `💵 Dinheiro${p.troco ? ' · Troco p/ R$ ' + p.troco.toFixed(2).replace('.',',') : ''}`
+      : p.pagamento === 'dinheiro' ? `💵 Dinheiro${p.troco ? ' · Troco p/ R$ ' + p.troco.toFixed(2).replace('.', ',') : ''}`
       : p.pagamento === 'cartao' ? `💳 Cartão ${p.cartaoTipo === 'credito' ? 'Crédito' : 'Débito'}`
-      : '';
+      : ''
 
     const itensList = p.itens.map(i =>
-      `<span style="background:var(--border);border-radius:6px;padding:2px 7px;margin:2px;display:inline-block">${i.emoji} ${i.nome} <strong>x${i.qty}</strong> <span style="color:var(--accent2)">R$ ${(i.preco*i.qty).toFixed(2).replace('.',',')}</span></span>`
-    ).join('');
+      `<span style="background:var(--border);border-radius:6px;padding:2px 7px;margin:2px;display:inline-block">${i.emoji} ${i.nome} <strong>x${i.qty}</strong> <span style="color:var(--accent2)">R$ ${(i.preco*i.qty).toFixed(2).replace('.', ',')}</span></span>`
+    ).join('')
 
-    const card = document.createElement('div');
-    card.className = 'hist-card';
+    const card = document.createElement('div')
+    card.className = 'hist-card'
     card.innerHTML = `
       <div class="hist-card-top">
         <div>
@@ -1272,7 +1285,7 @@ function renderHistorico() {
           ${p.fone ? `<div class="hist-cliente-fone">📱 ${p.fone}</div>` : ''}
           ${pagLabel ? `<div class="hist-pag">${pagLabel}</div>` : ''}
         </div>
-        <div class="hist-total">R$ ${p.total.toFixed(2).replace('.',',')}</div>
+        <div class="hist-total">R$ ${p.total.toFixed(2).replace('.', ',')}</div>
       </div>
       <div class="hist-itens-full">${itensList}</div>
       <div class="hist-meta">
@@ -1281,86 +1294,86 @@ function renderHistorico() {
       </div>
       ${p.obs ? `<div style="font-size:0.76rem;color:var(--muted);margin-top:4px">📝 ${p.obs}</div>` : ''}
       <div class="hist-acoes">
-        <button class="btn btn-ghost" onclick="mostrarNota(state.pedidos.find(x=>x.id==${p.id}))">🧾 Nota</button>
+        <button class="btn btn-ghost" onclick="mostrarNota(${JSON.stringify(p).replace(/"/g, '&quot;')})">🧾 Nota</button>
         <button class="btn btn-ghost" style="color:var(--accent2);border-color:var(--accent2)" onclick="editPedido(${p.id})">✏️ Editar</button>
         <button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)" onclick="delPedido(${p.id})">🗑️</button>
       </div>
-    `;
-    list.appendChild(card);
-  });
+    `
+    list.appendChild(card)
+  })
 }
 
 async function delPedido(id) {
-  if (!confirm('Remover este pedido?')) return;
-  await deleteDoc(doc(db, 'pedidos', id.toString()));
-  toast('Pedido removido! 🗑️');
+  if (!confirm('Remover este pedido?')) return
+  await supabase.from('pedidos').delete().eq('id', id)
+  toast('Pedido removido! 🗑️')
 }
 
 function editPedido(id) {
-  const p = state.pedidos.find(x => x.id === id);
-  if (!p) return;
-  document.getElementById('ep-cliente').value = p.cliente || '';
-  document.getElementById('ep-fone').value = p.fone || '';
-  document.getElementById('ep-end').value = p.end || '';
-  document.getElementById('ep-obs').value = p.obs || '';
-  document.getElementById('ep-taxa').value = p.taxa || 0;
-  document.getElementById('modal-edit-pedido').dataset.editId = id;
-  openModal('modal-edit-pedido');
+  const p = state.pedidos.find(x => x.id === id)
+  if (!p) return
+  document.getElementById('ep-cliente').value = p.cliente || ''
+  document.getElementById('ep-fone').value = p.fone || ''
+  document.getElementById('ep-end').value = p.end || ''
+  document.getElementById('ep-obs').value = p.obs || ''
+  document.getElementById('ep-taxa').value = p.taxa || 0
+  document.getElementById('modal-edit-pedido').dataset.editId = id
+  openModal('modal-edit-pedido')
 }
 
 async function salvarEditPedido() {
-  const id = parseInt(document.getElementById('modal-edit-pedido').dataset.editId);
-  const p = state.pedidos.find(x => x.id === id);
-  if (!p) return;
-  p.cliente = document.getElementById('ep-cliente').value.trim() || p.cliente;
-  p.fone    = document.getElementById('ep-fone').value.trim();
-  p.end     = document.getElementById('ep-end').value.trim();
-  p.obs     = document.getElementById('ep-obs').value.trim();
-  const novaTaxa = parseFloat(document.getElementById('ep-taxa').value) || 0;
-  p.total = p.total - p.taxa + novaTaxa;
-  p.taxa  = novaTaxa;
-  await setDoc(doc(db, 'pedidos', id.toString()), p);
-  closeModal('modal-edit-pedido');
-  renderHistorico();
-  toast('Pedido atualizado! ✅');
+  const id = parseInt(document.getElementById('modal-edit-pedido').dataset.editId)
+  const p = state.pedidos.find(x => x.id === id)
+  if (!p) return
+  p.cliente = document.getElementById('ep-cliente').value.trim() || p.cliente
+  p.fone    = document.getElementById('ep-fone').value.trim()
+  p.end     = document.getElementById('ep-end').value.trim()
+  p.obs     = document.getElementById('ep-obs').value.trim()
+  const novaTaxa = parseFloat(document.getElementById('ep-taxa').value) || 0
+  p.total = p.total - p.taxa + novaTaxa
+  p.taxa  = novaTaxa
+  await supabase.from('pedidos').update(p).eq('id', id)
+  closeModal('modal-edit-pedido')
+  renderHistorico()
+  toast('Pedido atualizado! ✅')
 }
 
 // ======= DASHBOARD =======
 function dashHoje() {
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('dash-de').value = today;
-  document.getElementById('dash-ate').value = today;
-  renderDash();
+  const today = new Date().toISOString().split('T')[0]
+  document.getElementById('dash-de').value = today
+  document.getElementById('dash-ate').value = today
+  renderDash()
 }
 
 function dashMes() {
-  const d = new Date();
-  const de = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
-  const ate = d.toISOString().split('T')[0];
-  document.getElementById('dash-de').value = de;
-  document.getElementById('dash-ate').value = ate;
-  renderDash();
+  const d = new Date()
+  const de = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`
+  const ate = d.toISOString().split('T')[0]
+  document.getElementById('dash-de').value = de
+  document.getElementById('dash-ate').value = ate
+  renderDash()
 }
 
 function renderDash() {
-  const de = document.getElementById('dash-de').value;
-  const ate = document.getElementById('dash-ate').value;
+  const de = document.getElementById('dash-de').value
+  const ate = document.getElementById('dash-ate').value
 
-  let pedidos = state.pedidos;
-  if (de) pedidos = pedidos.filter(p => p.data >= de);
-  if (ate) pedidos = pedidos.filter(p => p.data <= ate + 'T23:59:59');
+  let pedidos = state.pedidos
+  if (de) pedidos = pedidos.filter(p => p.data >= de)
+  if (ate) pedidos = pedidos.filter(p => p.data <= ate + 'T23:59:59')
 
-  const receita = pedidos.reduce((a, p) => a + p.total, 0);
-  const custo = pedidos.reduce((a, p) => a + (p.custo || 0), 0);
-  const frete = pedidos.reduce((a, p) => a + (p.taxa || 0), 0);
+  const receita = pedidos.reduce((a, p) => a + p.total, 0)
+  const custo = pedidos.reduce((a, p) => a + (p.custo || 0), 0)
+  const frete = pedidos.reduce((a, p) => a + (p.taxa || 0), 0)
   const gastosPeriodo = state.gastos.filter(g => {
-    if (de && g.data < de) return false;
-    if (ate && g.data > ate) return false;
-    return true;
-  }).reduce((a, g) => a + parseFloat(g.valor), 0);
-  const lucro = receita - custo - gastosPeriodo;
-  const qtd = pedidos.length;
-  const ticket = qtd > 0 ? receita / qtd : 0;
+    if (de && g.data < de) return false
+    if (ate && g.data > ate) return false
+    return true
+  }).reduce((a, g) => a + parseFloat(g.valor), 0)
+  const lucro = receita - custo - gastosPeriodo
+  const qtd = pedidos.length
+  const ticket = qtd > 0 ? receita / qtd : 0
 
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Receita</div><div class="kpi-val green">R$ ${receita.toFixed(0)}</div></div>
@@ -1370,19 +1383,19 @@ function renderDash() {
     <div class="kpi-card"><div class="kpi-label">Frete</div><div class="kpi-val green">R$ ${frete.toFixed(0)}</div></div>
     <div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-val red">R$ ${gastosPeriodo.toFixed(0)}</div></div>
     <div class="kpi-card"><div class="kpi-label">Custo Prod.</div><div class="kpi-val red">R$ ${custo.toFixed(0)}</div></div>
-  `;
+  `
 
   // Mais vendidos
-  const vendas = {};
+  const vendas = {}
   pedidos.forEach(p => p.itens.forEach(i => {
-    vendas[i.nome] = vendas[i.nome] || { nome: i.nome, emoji: i.emoji, qty: 0, val: 0 };
-    vendas[i.nome].qty += i.qty;
-    vendas[i.nome].val += i.preco * i.qty;
-  }));
-  const sorted = Object.values(vendas).sort((a,b) => b.qty - a.qty);
-  const maxQty = sorted[0]?.qty || 1;
-  const rankEl = document.getElementById('ranking-list');
-  if (sorted.length === 0) { rankEl.innerHTML = '<div class="empty"><div class="empty-icon">📊</div>Sem dados ainda.</div>'; }
+    vendas[i.nome] = vendas[i.nome] || { nome: i.nome, emoji: i.emoji, qty: 0, val: 0 }
+    vendas[i.nome].qty += i.qty
+    vendas[i.nome].val += i.preco * i.qty
+  }))
+  const sorted = Object.values(vendas).sort((a,b) => b.qty - a.qty)
+  const maxQty = sorted[0]?.qty || 1
+  const rankEl = document.getElementById('ranking-list')
+  if (sorted.length === 0) { rankEl.innerHTML = '<div class="empty"><div class="empty-icon">📊</div>Sem dados ainda.</div>' }
   else {
     rankEl.innerHTML = sorted.slice(0,8).map((v,i) => `
       <div class="rank-item">
@@ -1392,183 +1405,183 @@ function renderDash() {
           <div class="progress-bar"><div class="progress-fill" style="width:${(v.qty/maxQty*100).toFixed(0)}%"></div></div>
           <div class="rank-qty">${v.qty} unid.</div>
         </div>
-        <div class="rank-val">R$ ${v.val.toFixed(2).replace('.',',')}</div>
+        <div class="rank-val">R$ ${v.val.toFixed(2).replace('.', ',')}</div>
       </div>
-    `).join('');
+    `).join('')
   }
 }
 
 // ======= FUNCIONÁRIOS =======
 function renderFuncionarios() {
-  const el = document.getElementById('func-list');
+  const el = document.getElementById('func-list')
   if (state.funcionarios.length === 0) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">👷</div>Nenhum funcionário ainda.</div>';
-    return;
+    el.innerHTML = '<div class="empty"><div class="empty-icon">👷</div>Nenhum funcionário ainda.</div>'
+    return
   }
   el.innerHTML = state.funcionarios.map(f => `
     <div class="func-card">
       <div class="func-avatar">${f.nome[0].toUpperCase()}</div>
       <div class="func-info">
         <div class="func-name">${f.nome}</div>
-        <div class="func-stats">Salário fixo: <strong style="color:var(--accent2)">R$ ${(f.salario||0).toFixed(2).replace('.',',')}</strong></div>
+        <div class="func-stats">Salário fixo: <strong style="color:var(--accent2)">R$ ${(f.salario||0).toFixed(2).replace('.', ',')}</strong></div>
       </div>
-      <button class="del-btn" onclick="delFunc('${f.id}')">🗑️</button>
+      <button class="del-btn" onclick="delFunc(${f.id})">🗑️</button>
     </div>
-  `).join('');
+  `).join('')
 }
 
 async function salvarFunc() {
-  const nome = document.getElementById('func-nome').value.trim();
-  const salario = parseFloat(document.getElementById('func-salario').value) || 0;
-  if (!nome) { toast('Digite o nome!', true); return; }
-  await addDoc(collection(db, 'funcionarios'), { nome, salario });
-  closeModal('modal-func');
-  document.getElementById('func-nome').value = '';
-  document.getElementById('func-salario').value = '';
-  toast('Funcionário adicionado! 👷');
+  const nome = document.getElementById('func-nome').value.trim()
+  const salario = parseFloat(document.getElementById('func-salario').value) || 0
+  if (!nome) { toast('Digite o nome!', true); return }
+  await supabase.from('funcionarios').insert([{ nome, salario }])
+  closeModal('modal-func')
+  document.getElementById('func-nome').value = ''
+  document.getElementById('func-salario').value = ''
+  toast('Funcionário adicionado! 👷')
 }
 
 async function delFunc(id) {
-  if (!confirm('Remover funcionário?')) return;
-  await deleteDoc(doc(db, 'funcionarios', id));
-  toast('Funcionário removido! 🗑️');
+  if (!confirm('Remover funcionário?')) return
+  await supabase.from('funcionarios').delete().eq('id', id)
+  toast('Funcionário removido! 🗑️')
 }
 
 // ======= GASTOS =======
 function renderGastos() {
-  const el = document.getElementById('gastos-list');
-  const empty = document.getElementById('gastos-empty');
-  const receita = state.pedidos.reduce((a,p) => a+p.total, 0);
-  const totalGastos = state.gastos.reduce((a,g) => a+parseFloat(g.valor), 0);
-  const lucro = receita - totalGastos;
-  document.getElementById('kpi-gastos-total').textContent = 'R$ ' + totalGastos.toFixed(0);
-  document.getElementById('kpi-receita-g').textContent = 'R$ ' + receita.toFixed(0);
-  const lucroEl = document.getElementById('kpi-lucro-g');
-  lucroEl.textContent = 'R$ ' + lucro.toFixed(0);
-  lucroEl.className = 'kpi-val ' + (lucro >= 0 ? 'green' : 'red');
+  const el = document.getElementById('gastos-list')
+  const empty = document.getElementById('gastos-empty')
+  const receita = state.pedidos.reduce((a,p) => a+p.total, 0)
+  const totalGastos = state.gastos.reduce((a,g) => a+parseFloat(g.valor), 0)
+  const lucro = receita - totalGastos
+  document.getElementById('kpi-gastos-total').textContent = 'R$ ' + totalGastos.toFixed(0)
+  document.getElementById('kpi-receita-g').textContent = 'R$ ' + receita.toFixed(0)
+  const lucroEl = document.getElementById('kpi-lucro-g')
+  lucroEl.textContent = 'R$ ' + lucro.toFixed(0)
+  lucroEl.className = 'kpi-val ' + (lucro >= 0 ? 'green' : 'red')
 
-  if (state.gastos.length === 0) { empty.style.display = 'block'; el.innerHTML = ''; return; }
-  empty.style.display = 'none';
+  if (state.gastos.length === 0) { empty.style.display = 'block'; el.innerHTML = ''; return }
+  empty.style.display = 'none'
 
-  const sorted = [...state.gastos].reverse();
+  const sorted = [...state.gastos].reverse()
   el.innerHTML = sorted.map(g => `
     <div class="gasto-row">
       <div>
         <div class="gasto-desc">${g.desc}</div>
         <div class="gasto-cat">${g.cat} · ${g.data}</div>
       </div>
-      <div class="gasto-val">-R$ ${parseFloat(g.valor).toFixed(2).replace('.',',')}</div>
-      <button class="del-btn" onclick="delGasto('${g.id}')">🗑️</button>
+      <div class="gasto-val">-R$ ${parseFloat(g.valor).toFixed(2).replace('.', ',')}</div>
+      <button class="del-btn" onclick="delGasto(${g.id})">🗑️</button>
     </div>
-  `).join('');
+  `).join('')
 }
 
 async function salvarGasto() {
-  const desc = document.getElementById('gasto-desc').value.trim();
-  const valor = parseFloat(document.getElementById('gasto-val').value) || 0;
-  const cat = document.getElementById('gasto-cat').value;
-  const data = document.getElementById('gasto-data').value;
-  if (!desc || !valor) { toast('Preencha descrição e valor!', true); return; }
-  await addDoc(collection(db, 'gastos'), { desc, valor, cat, data });
-  closeModal('modal-gasto');
-  document.getElementById('gasto-desc').value = '';
-  document.getElementById('gasto-val').value = '';
-  toast('Gasto registrado! 💸');
+  const desc = document.getElementById('gasto-desc').value.trim()
+  const valor = parseFloat(document.getElementById('gasto-val').value) || 0
+  const cat = document.getElementById('gasto-cat').value
+  const data = document.getElementById('gasto-data').value
+  if (!desc || !valor) { toast('Preencha descrição e valor!', true); return }
+  await supabase.from('gastos').insert([{ desc, valor, cat, data }])
+  closeModal('modal-gasto')
+  document.getElementById('gasto-desc').value = ''
+  document.getElementById('gasto-val').value = ''
+  toast('Gasto registrado! 💸')
 }
 
 async function delGasto(id) {
-  if (!confirm('Remover gasto?')) return;
-  await deleteDoc(doc(db, 'gastos', id));
-  toast('Gasto removido! 🗑️');
+  if (!confirm('Remover gasto?')) return
+  await supabase.from('gastos').delete().eq('id', id)
+  toast('Gasto removido! 🗑️')
 }
 
 // ======= CARDÁPIO MANAGE =======
 function renderCardManage() {
-  const el = document.getElementById('card-manage-list');
+  const el = document.getElementById('card-manage-list')
   el.innerHTML = state.cardapio.map(c => `
     <div class="gasto-row" style="align-items:center">
       <span style="font-size:1.5rem">${c.emoji}</span>
       <div style="flex:1">
         <div style="font-weight:700">${c.nome}</div>
-        <div style="font-size:0.8rem;color:var(--muted)">Preço: R$ ${c.preco.toFixed(2).replace('.',',')} · Custo: R$ ${(c.custo||0).toFixed(2).replace('.',',')}</div>
+        <div style="font-size:0.8rem;color:var(--muted)">Preço: R$ ${c.preco.toFixed(2).replace('.', ',')} · Custo: R$ ${(c.custo||0).toFixed(2).replace('.', ',')}</div>
       </div>
       <button class="del-btn" style="color:var(--accent2);font-size:1.1rem" onclick="editCardItem(${c.id})">✏️</button>
       <button class="del-btn" onclick="delCardItem(${c.id})">🗑️</button>
     </div>
-  `).join('');
+  `).join('')
 }
 
 async function salvarCardItem() {
-  const nome = document.getElementById('card-nome').value.trim();
-  const preco = parseFloat(document.getElementById('card-preco').value) || 0;
-  const emoji = document.getElementById('card-emoji').value || '🍽️';
-  const custo = parseFloat(document.getElementById('card-custo').value) || 0;
-  if (!nome || !preco) { toast('Preencha nome e preço!', true); return; }
-  const id = state.cardNextId++;
-  await setDoc(doc(db, 'cardapio', id.toString()), { id, nome, preco, emoji, custo });
-  closeModal('modal-card');
-  document.getElementById('card-nome').value = '';
-  document.getElementById('card-preco').value = '';
-  document.getElementById('card-emoji').value = '';
-  document.getElementById('card-custo').value = '';
-  toast('Item adicionado! 🥩');
+  const nome = document.getElementById('card-nome').value.trim()
+  const preco = parseFloat(document.getElementById('card-preco').value) || 0
+  const emoji = document.getElementById('card-emoji').value || '🍽️'
+  const custo = parseFloat(document.getElementById('card-custo').value) || 0
+  if (!nome || !preco) { toast('Preencha nome e preço!', true); return }
+  const id = state.cardNextId++
+  await supabase.from('cardapio').insert([{ id, nome, preco, emoji, custo }])
+  closeModal('modal-card')
+  document.getElementById('card-nome').value = ''
+  document.getElementById('card-preco').value = ''
+  document.getElementById('card-emoji').value = ''
+  document.getElementById('card-custo').value = ''
+  toast('Item adicionado! 🥩')
 }
 
 async function delCardItem(id) {
-  if (!confirm('Remover item do cardápio?')) return;
-  await deleteDoc(doc(db, 'cardapio', id.toString()));
-  toast('Item removido! 🗑️');
+  if (!confirm('Remover item do cardápio?')) return
+  await supabase.from('cardapio').delete().eq('id', id)
+  toast('Item removido! 🗑️')
 }
 
 function editCardItem(id) {
-  const item = state.cardapio.find(c => c.id == id);
-  if (!item) return;
-  document.getElementById('edit-card-nome').value = item.nome;
-  document.getElementById('edit-card-preco').value = item.preco;
-  document.getElementById('edit-card-custo').value = item.custo || 0;
-  document.getElementById('edit-card-emoji').value = item.emoji;
-  document.getElementById('modal-edit-card').dataset.editId = id;
-  openModal('modal-edit-card');
+  const item = state.cardapio.find(c => c.id == id)
+  if (!item) return
+  document.getElementById('edit-card-nome').value = item.nome
+  document.getElementById('edit-card-preco').value = item.preco
+  document.getElementById('edit-card-custo').value = item.custo || 0
+  document.getElementById('edit-card-emoji').value = item.emoji
+  document.getElementById('modal-edit-card').dataset.editId = id
+  openModal('modal-edit-card')
 }
 
 async function salvarEditCardItem() {
-  const id = parseInt(document.getElementById('modal-edit-card').dataset.editId);
-  const item = state.cardapio.find(c => c.id == id);
-  if (!item) return;
-  item.nome = document.getElementById('edit-card-nome').value.trim() || item.nome;
-  item.preco = parseFloat(document.getElementById('edit-card-preco').value) || item.preco;
-  item.custo = parseFloat(document.getElementById('edit-card-custo').value) || 0;
-  item.emoji = document.getElementById('edit-card-emoji').value || item.emoji;
-  await setDoc(doc(db, 'cardapio', id.toString()), item);
-  closeModal('modal-edit-card');
-  renderCardManage();
-  toast('Item atualizado! ✅');
+  const id = parseInt(document.getElementById('modal-edit-card').dataset.editId)
+  const item = state.cardapio.find(c => c.id == id)
+  if (!item) return
+  item.nome = document.getElementById('edit-card-nome').value.trim() || item.nome
+  item.preco = parseFloat(document.getElementById('edit-card-preco').value) || item.preco
+  item.custo = parseFloat(document.getElementById('edit-card-custo').value) || 0
+  item.emoji = document.getElementById('edit-card-emoji').value || item.emoji
+  await supabase.from('cardapio').update(item).eq('id', id)
+  closeModal('modal-edit-card')
+  renderCardManage()
+  toast('Item atualizado! ✅')
 }
 
 // ======= MODAL =======
 function openModal(id) {
-  document.getElementById(id).classList.add('open');
+  document.getElementById(id).classList.add('open')
 }
 function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
+  document.getElementById(id).classList.remove('open')
 }
 document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open') })
+})
 
 // ======= TOAST =======
 function toast(msg, err) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast' + (err ? ' error' : '');
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2800);
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = 'toast' + (err ? ' error' : '')
+  el.classList.add('show')
+  setTimeout(() => el.classList.remove('show'), 2800)
 }
 
 // ======= INIT =======
-setDate();
-setupListeners();
-renderCardapio();
+setDate()
+loadInitialData()
+setupSubscriptions()
 </script>
 </body>
 </html>
