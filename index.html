@@ -341,13 +341,13 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
 
-<script>
 // Supabase
 const SUPABASE_URL = 'https://dzsktshqqlvozcmbbhdd.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6c2t0c2hxcWx2b3pjbWJiaGRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgwMzEzOTIsImV4cCI6MjA5MzYwNzM5Mn0.x6bUchBQIi9VIEvQhjjyxq5TyFkBTGymvVfXJ-lh9b8'
-const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 // Estado
 let state = {
@@ -478,12 +478,19 @@ async function carregarPedidos() {
 
 // Carregar cardápio do Supabase
 async function carregarCardapio() {
-  const { data, error } = await supabase.from('cardapio').select('*');
-  if (error) { console.error('Erro ao carregar cardápio:', error); return; }
+  const { data, error } = await supabase.from('cardapio').select('*').order('id');
+  if (error) {
+    console.error('Erro ao carregar cardápio:', error);
+    toast('Erro ao carregar cardápio do banco!', true);
+    return;
+  }
   if (data && data.length > 0) {
     state.cardapio = data.map(function(c) {
-      return { id: c.id, nome: c.nome, preco: parseFloat(c.preco), emoji: c.emoji, custo: parseFloat(c.custo || 0) };
+      return { id: c.id, nome: c.nome, preco: parseFloat(c.preco), emoji: c.emoji || '🍽️', custo: parseFloat(c.custo || 0) };
     });
+    console.log('Cardápio carregado do Supabase:', state.cardapio);
+  } else {
+    console.log('Cardápio vazio no Supabase, usando padrão');
   }
 }
 
@@ -634,6 +641,13 @@ function toast(msg, err) {
   await carregarCardapio();
   renderCardapio();
 })();
+
+// Expor funções ao escopo global para onclick no HTML
+window.goTab = goTab;
+window.addCarrinho = addCarrinho;
+window.removeCarrinho = removeCarrinho;
+window.limparCarrinho = limparCarrinho;
+window.confirmarPedido = confirmarPedido;
 </script>
 </body>
 </html>
