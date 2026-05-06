@@ -617,13 +617,115 @@ function renderGastos() {
 // Cardápio Manage
 function renderCardManage() {
   const el = document.getElementById('card-manage-list');
-  el.innerHTML = state.cardapio.map(function(c) {
+  el.innerHTML = `
+    <div class="pedido-box" style="margin-bottom:16px">
+      <div class="section-title" style="font-size:1rem;margin-bottom:10px">➕ Adicionar Item</div>
+      <div class="form-row">
+        <div class="form-group" style="margin:0">
+          <label>Nome</label>
+          <input type="text" id="new-item-nome" placeholder="Ex: Churrasco Misto">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Emoji</label>
+          <input type="text" id="new-item-emoji" placeholder="🍖" style="width:80px">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:10px">
+        <div class="form-group" style="margin:0">
+          <label>Preço de Venda (R$)</label>
+          <input type="number" id="new-item-preco" placeholder="20" step="0.50" min="0">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Custo (R$)</label>
+          <input type="number" id="new-item-custo" placeholder="10" step="0.50" min="0">
+        </div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="adicionarItemCardapio()">➕ Adicionar ao Cardápio</button>
+    </div>
+    <div id="manage-itens-list"></div>
+  `;
+  renderManageItens();
+}
+
+function renderManageItens() {
+  const list = document.getElementById('manage-itens-list');
+  if (!list) return;
+  if (state.cardapio.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">🍽️</div>Nenhum item no cardápio.</div>';
+    return;
+  }
+  list.innerHTML = state.cardapio.map(function(c) {
     return `
       <div class="hist-card">
-        <div style="font-weight:700">${c.emoji} ${c.nome} - R$ ${c.preco.toFixed(2).replace('.',',')}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700;font-size:1rem">${c.emoji} ${c.nome}</div>
+          <button class="qty-btn" style="background:var(--red)" onclick="deletarItemCardapio(${c.id})">🗑️</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0">
+            <label>Preço Venda (R$)</label>
+            <input type="number" value="${c.preco}" step="0.50" min="0" onchange="editarItemCardapio(${c.id}, 'preco', this.value)">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Custo (R$)</label>
+            <input type="number" value="${c.custo || 0}" step="0.50" min="0" onchange="editarItemCardapio(${c.id}, 'custo', this.value)">
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:8px">
+          <div class="form-group" style="margin:0">
+            <label>Nome</label>
+            <input type="text" value="${c.nome}" onchange="editarItemCardapio(${c.id}, 'nome', this.value)">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Emoji</label>
+            <input type="text" value="${c.emoji}" style="width:80px" onchange="editarItemCardapio(${c.id}, 'emoji', this.value)">
+          </div>
+        </div>
       </div>
     `;
   }).join('');
+}
+
+async function adicionarItemCardapio() {
+  const nome = document.getElementById('new-item-nome').value.trim();
+  const emoji = document.getElementById('new-item-emoji').value.trim() || '🍽️';
+  const preco = parseFloat(document.getElementById('new-item-preco').value) || 0;
+  const custo = parseFloat(document.getElementById('new-item-custo').value) || 0;
+  if (!nome || preco <= 0) { toast('Preencha nome e preço!', true); return; }
+
+  const { data, error } = await supabase.from('cardapio').insert([{ nome, emoji, preco, custo }]).select();
+  if (error) { console.error(error); toast('Erro ao adicionar!', true); return; }
+
+  await carregarCardapio();
+  renderCardManage();
+  renderCardapio();
+  document.getElementById('new-item-nome').value = '';
+  document.getElementById('new-item-emoji').value = '';
+  document.getElementById('new-item-preco').value = '';
+  document.getElementById('new-item-custo').value = '';
+  toast('Item adicionado! 🍽️');
+}
+
+async function editarItemCardapio(id, campo, valor) {
+  const item = state.cardapio.find(c => c.id == id);
+  if (!item) return;
+  item[campo] = campo === 'nome' || campo === 'emoji' ? valor : parseFloat(valor);
+  const updateData = {};
+  updateData[campo] = item[campo];
+  const { error } = await supabase.from('cardapio').update(updateData).eq('id', id);
+  if (error) { console.error(error); toast('Erro ao editar!', true); return; }
+  renderCardapio();
+  toast('Item atualizado! ✅');
+}
+
+async function deletarItemCardapio(id) {
+  if (!confirm('Tem certeza que deseja deletar este item?')) return;
+  const { error } = await supabase.from('cardapio').delete().eq('id', id);
+  if (error) { console.error(error); toast('Erro ao deletar!', true); return; }
+  await carregarCardapio();
+  renderCardManage();
+  renderCardapio();
+  toast('Item deletado! 🗑️');
 }
 
 // Toast
@@ -648,6 +750,10 @@ window.addCarrinho = addCarrinho;
 window.removeCarrinho = removeCarrinho;
 window.limparCarrinho = limparCarrinho;
 window.confirmarPedido = confirmarPedido;
+window.renderCardManage = renderCardManage;
+window.adicionarItemCardapio = adicionarItemCardapio;
+window.editarItemCardapio = editarItemCardapio;
+window.deletarItemCardapio = deletarItemCardapio;
 </script>
 </body>
 </html>
