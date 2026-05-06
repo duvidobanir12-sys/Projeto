@@ -478,19 +478,21 @@ async function carregarPedidos() {
 
 // Carregar cardápio do Supabase
 async function carregarCardapio() {
+  console.log('Tentando carregar cardápio do Supabase...');
   const { data, error } = await supabase.from('cardapio').select('*').order('id');
+  console.log('Resposta Supabase - data:', data, 'error:', error);
   if (error) {
-    console.error('Erro ao carregar cardápio:', error);
-    toast('Erro ao carregar cardápio do banco!', true);
+    console.error('Erro ao carregar cardápio:', error.message, error.details, error.hint);
+    console.log('Usando cardápio padrão');
     return;
   }
   if (data && data.length > 0) {
     state.cardapio = data.map(function(c) {
       return { id: c.id, nome: c.nome, preco: parseFloat(c.preco), emoji: c.emoji || '🍽️', custo: parseFloat(c.custo || 0) };
     });
-    console.log('Cardápio carregado do Supabase:', state.cardapio);
+    console.log('Cardápio carregado do Supabase:', state.cardapio.length, 'itens');
   } else {
-    console.log('Cardápio vazio no Supabase, usando padrão');
+    console.log('Cardápio vazio no Supabase (0 itens), usando padrão');
   }
 }
 
